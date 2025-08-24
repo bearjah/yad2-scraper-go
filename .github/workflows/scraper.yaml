@@ -4,20 +4,32 @@ on:
   schedule:
     - cron: '*/15 5-17 * * *'
   workflow_dispatch:
-    branches:
-      - '**'
 
 jobs:
   scraper:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install packages
-        run: yarn install
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Go mod download
+        run: go mod download
+
+      - name: Build
+        run: go build -o scraper ./main.go
 
       - name: Setup git config
         run: |
@@ -25,17 +37,20 @@ jobs:
           git config user.email "${{ secrets.GIT_CONFIG_EMAIL }}"
 
       - name: Run scraper
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          YAD2_BROWSER: "1"
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          export API_TOKEN=${{ secrets.API_TOKEN }}
-          export CHAT_ID=${{ secrets.CHAT_ID }}
-          yarn scrape
+          ./scraper
 
       - name: Push new json data if needed
         run: |
           if [ -f ./push_me ]; then
-            echo Pushing to Github...
+            echo "Pushing to GitHub..."
             git add .
             DATE=$(date +"%F, %H:%M:%S")
-            git commit -m "updated data - $DATE"
+            git commit -m "updated data, $DATE" || echo "Nothing to commit"
             git push
           fi
